@@ -11,9 +11,12 @@ static void usage() {
   "-X, --request <method>  HTTP method\n"
   "-H, --header <header>   HTTP header\n"
   "-k, --insecure          don't verify SSL certificate\n"
+  "-x, --proxy <URL>       use this proxy\n"
+  "-p, --proxytunnel       use HTTP CONNECT for proxy\n"
   "-v, --verbose           write headers to stderr\n"
   "-u, --unbuffered        disable stdout/stderr buffering\n"
   "--json                  shorthand for -H \"Content-Type: application/json\"\n"
+  "--proxy-header <header> HTTP header for proxy\n"
   );
 }
 
@@ -37,17 +40,23 @@ int main(int argc, char **argv) {
     { "header", required_argument, 0, 'H' },
     { "json", no_argument, 0, 'j' },
     { "insecure", no_argument, 0, 'k' },
+    { "proxytunnel", no_argument, 0, 'p' },
+    { "proxy", required_argument, 0, 'x' },
     { "unbuffered", no_argument, 0, 'u' },
     { "verbose", no_argument, 0, 'v' },
+    { "proxy-header", required_argument, 0, ('p'<<8|'h') },
   };
   curl::global_scope curl_;
   curl::slist headers;
+  curl::slist proxy_headers;
   const char *method = "GET";
   bool verify = true;
   bool verbose = false;
   int ch;
+  const char *proxy = nullptr;
+  bool proxytunnel = false;
 
-  while ((ch = getopt_long(argc, argv, "H:X:hjkuv", long_options, 0)) != EOF) {
+  while ((ch = getopt_long(argc, argv, "H:X:x:hjkpuv", long_options, 0)) != EOF) {
     if (ch == 'H')
       headers.append(optarg);
     else if (ch == 'X')
@@ -58,12 +67,18 @@ int main(int argc, char **argv) {
       headers.append("Content-Type: application/json");
     else if (ch == 'k')
       verify = false;
+    else if (ch == 'p')
+      proxytunnel = true;
+    else if (ch == 'x')
+      proxy = optarg;
     else if (ch == 'v')
       verbose = true;
     else if (ch == 'u') {
       std::setbuf(stdout, nullptr);
       std::setbuf(stderr, nullptr);
     }
+    else if (ch == ('p'<<8|'h'))
+      proxy_headers.append(optarg);
     else
       return usage(), 1;
   }
@@ -100,6 +115,13 @@ int main(int argc, char **argv) {
     easy_handle.setopt(CURLOPT_DEBUGFUNCTION, debug_cb);
     easy_handle.setopt(CURLOPT_DEBUGDATA, stderr);
   }
+  if (proxy)
+    easy_handle.setopt(CURLOPT_PROXY, proxy);
+  if (proxytunnel)
+    easy_handle.setopt(CURLOPT_HTTPPROXYTUNNEL, 1L);
+  if (proxy_headers.get())
+    easy_handle.setopt(CURLOPT_PROXYHEADER, proxy_headers.get());
+
   if (std::strcmp(method, "HEAD") == 0) {
     easy_handle.setopt(CURLOPT_NOBODY, 1);
   }
